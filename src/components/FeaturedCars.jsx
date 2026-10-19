@@ -1,11 +1,64 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import CarCard from './CarCard';
 import { sampleCars } from '../data/cars';
 import { ArrowRight, Sparkles } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { getFavourites, getVehicles } from '../services/api';
 
 export default function FeaturedCars() {
-  const featuredCars = sampleCars.slice(0, 3);
+  const [featuredCars, setFeaturedCars] = useState(() => sampleCars.slice(0, 3));
+  const { isAuthenticated, token } = useAuth();
+  const [favouriteCarIds, setFavouriteCarIds] = useState([]);
+
+  // Fetch live featured vehicles from database
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFeatured() {
+      try {
+        const res = await getVehicles();
+        if (isMounted && res?.vehicles && Array.isArray(res.vehicles) && res.vehicles.length > 0) {
+          const featured = res.vehicles.filter((v) => v.tag === 'Featured');
+          const list = featured.length >= 3 ? featured.slice(0, 3) : res.vehicles.slice(0, 3);
+          setFeaturedCars(list);
+        }
+      } catch {
+        // Fallback to local sampleCars
+      }
+    }
+    loadFeatured();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFavourites() {
+      if (!isAuthenticated || !token) {
+        setFavouriteCarIds([]);
+        return;
+      }
+      try {
+        const res = await getFavourites(token);
+        if (isMounted && res?.favourite_ids) {
+          setFavouriteCarIds(res.favourite_ids);
+        }
+      } catch {
+        // Silently ignore
+      }
+    }
+    loadFavourites();
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, token]);
+
+  const handleToggleFav = (carId, isNowFav) => {
+    setFavouriteCarIds((prev) =>
+      isNowFav ? [...prev, carId] : prev.filter((id) => id !== carId)
+    );
+  };
 
   return (
     <section id="featured" className="py-20 lg:py-28 bg-slate-950 relative border-t border-slate-800/80">
@@ -45,7 +98,12 @@ export default function FeaturedCars() {
         {/* 3-Column Responsive Car Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {featuredCars.map((car) => (
-            <CarCard key={car.id} car={car} />
+            <CarCard
+              key={car.id}
+              car={car}
+              isFavourite={favouriteCarIds.includes(car.id)}
+              onToggleFavourite={handleToggleFav}
+            />
           ))}
         </div>
 

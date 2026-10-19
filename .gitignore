@@ -1,3 +1,9 @@
+# Frontend dependencies & build artifacts
+node_modules
+dist
+dist-ssr
+*.local
+
 # Logs
 logs
 *.log
@@ -7,15 +13,29 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Python & Virtual Environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 
-# Editor directories and files
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Django databases & static collection
+*.sqlite3
+db.sqlite3
+staticfiles/
+
+# Editor directories and temporary files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*

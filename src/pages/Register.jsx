@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Car,
   User,
@@ -12,10 +12,13 @@ import {
   ArrowRight,
   AlertCircle,
   CheckCircle2,
-  FileText,
+  Loader2,
 } from 'lucide-react';
+import { registerUser } from '../services/api';
 
 export default function Register() {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -29,11 +32,12 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const validate = () => {
     const newErrors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,15}$/;
+    const phoneRegex = /^[+]?[0-9\s().-]{7,25}$/;
 
     // Full name validation
     if (!formData.fullName.trim()) {
@@ -93,20 +97,62 @@ export default function Register() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
 
-    if (validate()) {
-      // Valid frontend submission - explicitly inform user without claiming authentication
-      setStatusMessage({
-        type: 'info',
-        text: 'Frontend validation passed successfully. Account creation API and database persistence will be connected in an upcoming step.',
-      });
-    } else {
+    if (!validate()) {
       setStatusMessage({
         type: 'error',
         text: 'Please review and fix the highlighted fields below.',
       });
+      return;
+    }
+
+    setLoading(true);
+    setStatusMessage(null);
+
+    try {
+      await registerUser({
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+      });
+
+      setStatusMessage({
+        type: 'success',
+        text: 'Account created successfully! Redirecting to sign in...',
+      });
+
+      // Transition to /login with pre-filled email and alert
+      setTimeout(() => {
+        navigate('/login', {
+          state: {
+            registeredEmail: formData.email,
+            successMessage: 'Account created successfully! Please sign in with your credentials.',
+          },
+        });
+      }, 1000);
+    } catch (err) {
+      const errorText = err.message || 'Registration failed. Please try again.';
+      setStatusMessage({
+        type: 'error',
+        text: errorText,
+      });
+
+      if (err.data && typeof err.data === 'object') {
+        const backendFieldErrors = {};
+        if (err.data.email) backendFieldErrors.email = err.data.email;
+        if (err.data.fullName) backendFieldErrors.fullName = err.data.fullName;
+        if (err.data.phone) backendFieldErrors.phone = err.data.phone;
+        if (err.data.password) backendFieldErrors.password = err.data.password;
+        if (err.data.confirmPassword) backendFieldErrors.confirmPassword = err.data.confirmPassword;
+        setErrors((prev) => ({ ...prev, ...backendFieldErrors }));
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -143,17 +189,23 @@ export default function Register() {
           {statusMessage && (
             <div
               className={`mb-6 p-4 rounded-xl text-xs sm:text-sm flex items-start gap-3 border ${
-                statusMessage.type === 'info'
+                statusMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : statusMessage.type === 'info'
                   ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
                   : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
               }`}
             >
-              {statusMessage.type === 'info' ? (
-                <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              {statusMessage.type === 'success' || statusMessage.type === 'info' ? (
+                <CheckCircle2
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    statusMessage.type === 'success' ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                />
               ) : (
                 <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               )}
-              <div className="leading-relaxed">{statusMessage.text}</div>
+              <div className="leading-relaxed font-medium">{statusMessage.text}</div>
             </div>
           )}
 
@@ -175,6 +227,7 @@ export default function Register() {
                   id="fullName"
                   name="fullName"
                   type="text"
+                  disabled={loading}
                   autoComplete="name"
                   value={formData.fullName}
                   onChange={handleChange}
@@ -183,7 +236,7 @@ export default function Register() {
                     errors.fullName
                       ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                       : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                  }`}
+                  } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
               {errors.fullName && (
@@ -210,6 +263,7 @@ export default function Register() {
                   id="email"
                   name="email"
                   type="email"
+                  disabled={loading}
                   autoComplete="email"
                   value={formData.email}
                   onChange={handleChange}
@@ -218,7 +272,7 @@ export default function Register() {
                     errors.email
                       ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                       : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                  }`}
+                  } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
               {errors.email && (
@@ -248,6 +302,7 @@ export default function Register() {
                   id="phone"
                   name="phone"
                   type="tel"
+                  disabled={loading}
                   autoComplete="tel"
                   value={formData.phone}
                   onChange={handleChange}
@@ -256,7 +311,7 @@ export default function Register() {
                     errors.phone
                       ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                       : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                  }`}
+                  } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
               {errors.phone && (
@@ -286,6 +341,7 @@ export default function Register() {
                     id="password"
                     name="password"
                     type={showPassword ? 'text' : 'password'}
+                    disabled={loading}
                     autoComplete="new-password"
                     value={formData.password}
                     onChange={handleChange}
@@ -294,7 +350,7 @@ export default function Register() {
                       errors.password
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                         : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                    }`}
+                    } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                   />
                   <button
                     type="button"
@@ -333,6 +389,7 @@ export default function Register() {
                     id="confirmPassword"
                     name="confirmPassword"
                     type={showConfirmPassword ? 'text' : 'password'}
+                    disabled={loading}
                     autoComplete="new-password"
                     value={formData.confirmPassword}
                     onChange={handleChange}
@@ -341,7 +398,7 @@ export default function Register() {
                       errors.confirmPassword
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                         : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                    }`}
+                    } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                   />
                   <button
                     type="button"
@@ -372,6 +429,7 @@ export default function Register() {
                 <input
                   type="checkbox"
                   name="agreeTerms"
+                  disabled={loading}
                   checked={formData.agreeTerms}
                   onChange={handleChange}
                   className="w-4 h-4 mt-0.5 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-400 focus:ring-offset-slate-900 cursor-pointer"
@@ -393,10 +451,24 @@ export default function Register() {
             {/* Create Account Submit Button */}
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-200 mt-2"
+              disabled={loading}
+              className={`w-full inline-flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-bold text-slate-950 transition-all duration-200 mt-2 ${
+                loading
+                  ? 'bg-amber-400/70 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30'
+              }`}
             >
-              <span>Create Account</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>Creating Account...</span>
+                </>
+              ) : (
+                <>
+                  <span>Create Account</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 

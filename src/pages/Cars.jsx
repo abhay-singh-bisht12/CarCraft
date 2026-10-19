@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search,
@@ -16,8 +16,66 @@ import {
 } from 'lucide-react';
 import CarCard from '../components/CarCard';
 import { sampleCars } from '../data/cars';
+import { useAuth } from '../context/AuthContext';
+import { getFavourites, getVehicles } from '../services/api';
 
 export default function Cars() {
+  const { isAuthenticated, token } = useAuth();
+  const [cars, setCars] = useState(sampleCars);
+  const [loadingCars, setLoadingCars] = useState(true);
+  const [favouriteCarIds, setFavouriteCarIds] = useState([]);
+
+  // Fetch live published vehicles from database
+  useEffect(() => {
+    let isMounted = true;
+    async function loadVehicles() {
+      try {
+        setLoadingCars(true);
+        const res = await getVehicles();
+        if (isMounted && res?.vehicles && Array.isArray(res.vehicles) && res.vehicles.length > 0) {
+          setCars(res.vehicles);
+        }
+      } catch (err) {
+        console.warn('Could not load vehicles from database API, using local inventory:', err);
+      } finally {
+        if (isMounted) setLoadingCars(false);
+      }
+    }
+    loadVehicles();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Fetch saved favourites for authenticated client
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFavourites() {
+      if (!isAuthenticated || !token) {
+        setFavouriteCarIds([]);
+        return;
+      }
+      try {
+        const res = await getFavourites(token);
+        if (isMounted && res?.favourite_ids) {
+          setFavouriteCarIds(res.favourite_ids);
+        }
+      } catch {
+        // Silently ignore if offline
+      }
+    }
+    loadFavourites();
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, token]);
+
+  const handleToggleFav = (carId, isNowFav) => {
+    setFavouriteCarIds((prev) =>
+      isNowFav ? [...prev, carId] : prev.filter((id) => id !== carId)
+    );
+  };
+
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
   const [minPrice, setMinPrice] = useState('');
@@ -37,15 +95,15 @@ export default function Cars() {
     }).format(val);
   };
 
-  // Derive filtered and sorted cars
+  // Derive filtered and sorted cars from database inventory
   const filteredCars = useMemo(() => {
-    return sampleCars
+    return cars
       .filter((car) => {
         // 1. Search Query: matches name, brand, or model
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase().trim();
-          const matchesName = car.name.toLowerCase().includes(query);
-          const matchesBrand = car.brand.toLowerCase().includes(query);
+          const matchesName = car.name ? car.name.toLowerCase().includes(query) : false;
+          const matchesBrand = car.brand ? car.brand.toLowerCase().includes(query) : false;
           const matchesModel = car.model ? car.model.toLowerCase().includes(query) : false;
           if (!matchesName && !matchesBrand && !matchesModel) {
             return false;
@@ -54,28 +112,30 @@ export default function Cars() {
 
         // 2. Minimum Price
         if (minPrice !== '' && !isNaN(Number(minPrice))) {
-          if (car.price < Number(minPrice)) {
+          if (Number(car.price) < Number(minPrice)) {
             return false;
           }
         }
 
         // 3. Maximum Price
         if (maxPrice !== '' && !isNaN(Number(maxPrice))) {
-          if (car.price > Number(maxPrice)) {
+          if (Number(car.price) > Number(maxPrice)) {
             return false;
           }
         }
 
         // 4. Fuel Type
         if (fuelType !== 'all') {
-          if (car.fuelType.toLowerCase() !== fuelType.toLowerCase()) {
+          const carFuel = (car.fuelType || car.fuel_type || '').toLowerCase();
+          if (carFuel !== fuelType.toLowerCase()) {
             return false;
           }
         }
 
         // 5. Transmission
         if (transmission !== 'all') {
-          if (car.transmission.toLowerCase() !== transmission.toLowerCase()) {
+          const carTrans = (car.transmission || '').toLowerCase();
+          if (carTrans !== transmission.toLowerCase()) {
             return false;
           }
         }
@@ -84,17 +144,17 @@ export default function Cars() {
       })
       .sort((a, b) => {
         if (sortBy === 'price-asc') {
-          return a.price - b.price;
+          return Number(a.price) - Number(b.price);
         }
         if (sortBy === 'price-desc') {
-          return b.price - a.price;
+          return Number(b.price) - Number(a.price);
         }
         // 'featured' sort: prioritize featured tags, then ID
         if (a.tag === 'Featured' && b.tag !== 'Featured') return -1;
         if (a.tag !== 'Featured' && b.tag === 'Featured') return 1;
-        return a.id - b.id;
+        return Number(a.id) - Number(b.id);
       });
-  }, [searchQuery, minPrice, maxPrice, fuelType, transmission, sortBy]);
+  }, [cars, searchQuery, minPrice, maxPrice, fuelType, transmission, sortBy]);
 
   // Check if any filter is active
   const hasActiveFilters = Boolean(
@@ -389,7 +449,12 @@ export default function Cars() {
         {filteredCars.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredCars.map((car) => (
-              <CarCard key={car.id} car={car} />
+              <CarCard
+                key={car.id}
+                car={car}
+                isFavourite={favouriteCarIds.includes(car.id)}
+                onToggleFavourite={handleToggleFav}
+              />
             ))}
           </div>
         ) : (

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Car,
   Mail,
@@ -11,9 +11,16 @@ import {
   AlertCircle,
   CheckCircle2,
   KeyRound,
+  Loader2,
 } from 'lucide-react';
+import { loginUser } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -24,6 +31,28 @@ export default function Login() {
   const [errors, setErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
   const [forgotPasswordNotice, setForgotPasswordNotice] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Check for success redirect message from registration or protected action message
+  useEffect(() => {
+    if (location.state?.message) {
+      setStatusMessage({
+        type: 'info',
+        text: location.state.message,
+      });
+    } else if (location.state?.successMessage) {
+      setStatusMessage({
+        type: 'success',
+        text: location.state.successMessage,
+      });
+      if (location.state?.registeredEmail) {
+        setFormData((prev) => ({
+          ...prev,
+          email: location.state.registeredEmail,
+        }));
+      }
+    }
+  }, [location.state]);
 
   const validate = () => {
     const newErrors = {};
@@ -39,8 +68,6 @@ export default function Login() {
     // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required.';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters.';
     }
 
     setErrors(newErrors);
@@ -63,21 +90,55 @@ export default function Login() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setForgotPasswordNotice(false);
 
-    if (validate()) {
-      // Valid frontend submission - explicitly inform user without claiming authentication
-      setStatusMessage({
-        type: 'info',
-        text: 'Frontend validation passed successfully. Backend authentication and session management will be connected in an upcoming step.',
-      });
-    } else {
+    if (!validate()) {
       setStatusMessage({
         type: 'error',
         text: 'Please correct the highlighted errors before submitting.',
       });
+      return;
+    }
+
+    setLoading(true);
+    setStatusMessage(null);
+
+    try {
+      const data = await loginUser({
+        email: formData.email,
+        password: formData.password,
+        rememberMe: formData.rememberMe,
+      });
+
+      // Update shared React auth state immediately without page refresh
+      if (data.token && data.user) {
+        login(data.token, data.user);
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: 'Signed in successfully! Redirecting...',
+      });
+
+      // Redirect to previous intended page or home route
+      const destination = location.state?.from?.pathname || location.state?.from || '/';
+      const destinationState = location.state?.actionData ? { actionData: location.state.actionData } : undefined;
+
+      setTimeout(() => {
+        navigate(destination, { replace: true, state: destinationState });
+      }, 700);
+    } catch (err) {
+      const errorText =
+        err.message || 'Invalid email or password. Please verify your credentials and try again.';
+      setStatusMessage({
+        type: 'error',
+        text: errorText,
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -119,17 +180,23 @@ export default function Login() {
           {statusMessage && (
             <div
               className={`mb-6 p-4 rounded-xl text-xs sm:text-sm flex items-start gap-3 border ${
-                statusMessage.type === 'info'
+                statusMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : statusMessage.type === 'info'
                   ? 'bg-amber-400/10 border-amber-400/30 text-amber-300'
                   : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
               }`}
             >
-              {statusMessage.type === 'info' ? (
-                <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              {statusMessage.type === 'success' || statusMessage.type === 'info' ? (
+                <CheckCircle2
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    statusMessage.type === 'success' ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                />
               ) : (
                 <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               )}
-              <div className="leading-relaxed">{statusMessage.text}</div>
+              <div className="leading-relaxed font-medium">{statusMessage.text}</div>
             </div>
           )}
 
@@ -160,6 +227,7 @@ export default function Login() {
                   id="email"
                   name="email"
                   type="email"
+                  disabled={loading}
                   autoComplete="email"
                   value={formData.email}
                   onChange={handleChange}
@@ -168,7 +236,7 @@ export default function Login() {
                     errors.email
                       ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                       : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                  }`}
+                  } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
               {errors.email && (
@@ -204,6 +272,7 @@ export default function Login() {
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
+                  disabled={loading}
                   autoComplete="current-password"
                   value={formData.password}
                   onChange={handleChange}
@@ -212,7 +281,7 @@ export default function Login() {
                     errors.password
                       ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                       : 'border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
-                  }`}
+                  } ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
                 <button
                   type="button"
@@ -241,6 +310,7 @@ export default function Login() {
                 <input
                   type="checkbox"
                   name="rememberMe"
+                  disabled={loading}
                   checked={formData.rememberMe}
                   onChange={handleChange}
                   className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-400 focus:ring-offset-slate-900 cursor-pointer"
@@ -252,10 +322,24 @@ export default function Login() {
             {/* Sign In Submit Button */}
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-200 mt-2"
+              disabled={loading}
+              className={`w-full inline-flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-bold text-slate-950 transition-all duration-200 mt-2 ${
+                loading
+                  ? 'bg-amber-400/70 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30'
+              }`}
             >
-              <span>Sign In to Dealership</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>Signing In...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In to Dealership</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
